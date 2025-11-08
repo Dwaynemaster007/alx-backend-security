@@ -6,7 +6,8 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django_ratelimit.decorators import ratelimit  # Official name
 from ipware import get_client_ip
 from functools import wraps
-
+from django.core.mail import send_mail
+from django.http import JsonResponse
 
 # === HELPER: Proxy-aware key for authenticated vs anonymous ===
 def get_ratelimit_key(group, request):
@@ -57,6 +58,15 @@ def login_view(request):
     else:
         return JsonResponse({"error": "Invalid credentials"}, status=401)
 
+# === ADD TEST EMAIL ===
+def test_email(request):
+    send_mail(
+        'ALX Milestone 6 - Deployment Test',
+        'If you see this, email + Celery works!',
+        'from@example.com',
+        ['your-email@gmail.com'],
+    )
+    return JsonResponse({"status": "Email sent!"})
 
 # === BONUS: Protect admin too (ALX loves this) ===
 @staff_member_required
