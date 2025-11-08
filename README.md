@@ -1,4 +1,4 @@
-```markdown
+
 # Django IP Security & Analytics  
 **ALX ProDev Backend — Milestone 6**
 
@@ -168,4 +168,3 @@ ALX ProDev Backend — Milestone 6
 **Tags:** `django` `security` `ip-tracking` `geolocation` `rate-limiting` `celery` `redis` `gdpr` `alx-backend`
 
 </div>
-```
