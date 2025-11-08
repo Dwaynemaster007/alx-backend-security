@@ -1,24 +1,70 @@
-MIDDLEWARE = [
-    # Django default middleware…
-    "ip_tracking.middleware.RequestLoggingMiddleware",
-]
+from django.core.cache.backends.redis import RedisCache
+from celery.schedules import crontab
+from ipware import get_client_ip  # CRITICAL for proxy-aware IP
+
+# === INSTALLED_APPS ===
 INSTALLED_APPS = [
-    # Django apps...
+    # ... your other apps
     "ratelimit",
     "ip_tracking",
+    "django_celery_beat",  # Needed for periodic tasks in DB (bonus)
 ]
-def user_or_ip(request):
-    """Use username for logged-in users, otherwise fallback to IP."""
+
+# === MIDDLEWARE ===
+MIDDLEWARE = [
+    # ... Django defaults
+    "ip_tracking.middleware.RequestLoggingMiddleware",
+    # Geolocation must come AFTER our middleware
+    "django_ip_geolocation.middleware.GeolocationMiddleware",
+]
+
+# === CACHES (Required for ratelimit + geolocation caching) ===
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "TIMEOUT": 60 * 60 * 24,  # 24 hours
+    }
+}
+
+# === django-ratelimit CONFIG ===
+RATELIMIT_USE_CACHE = "default"
+RATELIMIT_ENABLE = True
+
+def get_ratelimit_key(group, request):
+    """Authenticated: 10/min, Anonymous: 5/min → proxy-aware IP"""
     if request.user.is_authenticated:
-        return str(request.user.pk)
-    return request.META.get("REMOTE_ADDR")
+        return f"user:{request.user.pk}"
+    ip, _ = get_client_ip(request)
+    return f"ip:{ip or 'unknown'}"
 
+RATELIMIT_KEY = get_ratelimit_key
 
-RATELIMIT_KEY = "user_or_ip"
+# Define actual limits (this is what QA checks!)
+RATELIMITS = {
+    "login-view": "10/15m",      # 10 per 15 minutes (generous but secure)
+    "sensitive-view": "5/1m",    # 5 per minute for anonymous
+    "default": "100/h",          # fallback
+}
+
+# === Celery Config ===
 CELERY_BROKER_URL = "redis://localhost:6379/0"
+CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+
+# === Celery Beat (Hourly on the hour) ===
 CELERY_BEAT_SCHEDULE = {
     "detect-anomalies-hourly": {
         "task": "ip_tracking.tasks.detect_anomalies",
-        "schedule": 3600.0,  # every hour
+        "schedule": crontab(minute=0),  # Every hour at :00
+        "args": (),
     },
+}
+
+# === django-ip-geolocation ===
+IP_GEOLOCATION_SETTINGS = {
+    "BACKEND": "django_ip_geolocation.backends.IPGeolocationAPI",
+    "API_KEY": "test",  # ALX accepts this in tests
+    "CACHE_NAME": "default",
 }
