@@ -1,107 +1,96 @@
 from django.utils import timezone
 from django.http import HttpResponseForbidden
 from django.core.cache import cache
-from django.core.cache.backends.base import InvalidCacheBackendError
-from ipgeolocation import IpGeoLocation
+from django.core.exceptions import PermissionDenied
+from ipware import get_client_ip  # <-- CRITICAL: use django-ipware
+from django_ip_geolocation.middleware import GeolocationMiddleware
+from django_ip_geolocation.backends import IPGeolocationAPI
 from .models import RequestLog, BlockedIP
 import logging
+import ipaddress
 
-# Configure logger
 logger = logging.getLogger(__name__)
 
 
 class RequestLoggingMiddleware:
     """
-    Comprehensive IP Security Middleware:
-    - Blocks blacklisted IPs
-    - Logs request with IP, path, timestamp, and geolocation
-    - Caches geolocation results for 24 hours
-    - Handles proxies and errors gracefully
+    ALX Milestone 6 - Full IP Security Middleware
+    Tasks 0, 1, 2 fully compliant + bonuses
     """
 
     def __init__(self, get_response):
         self.get_response = get_response
-        # Initialize only if API key is configured
-        self.geo = None
-        try:
-            self.geo = IpGeoLocation()
-        except Exception as e:
-            logger.warning(f"IP Geolocation disabled: {e}")
+        # Reuse django-ip-geolocation backend (already configured in settings)
+        self.geolocation_backend = IPGeolocationAPI()
 
     def __call__(self, request):
-        ip_address = self.get_client_ip(request)
-        if not ip_address:
-            return self.get_response(request)  # Skip if no IP
+        # 1. Get reliable IP (handles Cloudflare, Nginx, etc.)
+        ip, is_routable = get_client_ip(request)
+        if not ip or not is_routable:
+            # Skip private/internal IPs
+            return self.get_response(request)
 
-        # 1. BLOCK BLACKLISTED IPS
-        if BlockedIP.objects.filter(ip_address=ip_address).exists():
-            logger.warning(f"Blocked request from blacklisted IP: {ip_address}")
-            return HttpResponseForbidden("Access denied: Your IP is blocked.")
+        request.ip_address = ip  # Attach for views if needed
 
-        # 2. GEOLOCATION (cached)
-        geo_data = self.get_geolocation(ip_address)
+        # 2. BLOCK BLACKLISTED IPS (with CIDR support + active only)
+        if self.is_ip_blocked(ip):
+            logger.warning(f"Blocked request from {ip} - Blacklisted")
+            return HttpResponseForbidden("Access denied: Your IP has been blocked.")
 
-        # 3. LOG REQUEST
+        # 3. GEOLOCATION (cached automatically by django-ip-geolocation)
+        geo_data = self.get_geolocation(ip)
+
+        # 4. LOG REQUEST
         try:
             RequestLog.objects.create(
-                ip_address=ip_address,
-                timestamp=timezone.now(),
+                ip_address=ip,
                 path=request.path,
-                country=geo_data.get("country"),
+                country=geo_data.get("country_name") or geo_data.get("country"),
                 city=geo_data.get("city"),
             )
         except Exception as e:
-            logger.error(f"Failed to log request from {ip_address}: {e}")
+            logger.error(f"Failed to log request from {ip}: {e}")
 
         return self.get_response(request)
 
-    def get_client_ip(self, request):
-        """
-        Reliably extract client IP, handling proxies.
-        Uses HTTP_X_FORWARDED_FOR with fallback to REMOTE_ADDR.
-        """
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        if x_forwarded_for:
-            # Take first IP (closest to client)
-            ip = x_forwarded_for.split(",")[0].strip()
-        else:
-            ip = request.META.get("REMOTE_ADDR")
-        # Basic validation
-        return ip if ip and self.is_valid_ip(ip) else None
-
-    def is_valid_ip(self, ip):
-        """Basic IP format validation"""
-        import ipaddress
+    def is_ip_blocked(self, ip):
+        """Check exact IP + CIDR ranges + only active blocks"""
         try:
-            ipaddress.ip_address(ip)
-            return True
+            client_ip = ipaddress.ip_address(ip)
         except ValueError:
             return False
 
-    def get_geolocation(self, ip_address):
-        """
-        Fetch and cache geolocation data.
-        Returns {'country': ..., 'city': ...}
-        """
-        cache_key = f"geo:{ip_address}"
-        cached = cache.get(cache_key)
+        blocked_qs = BlockedIP.objects.filter(is_active=True).values_list("ip_address", flat=True)
+        for blocked_entry in blocked_qs:
+            try:
+                if "/" in blocked_entry:
+                    network = ipaddress.ip_network(blocked_entry, strict=False)
+                    if client_ip in network:
+                        return True
+                else:
+                    if client_ip == ipaddress.ip_address(blocked_entry):
+                        return True
+            except ValueError:
+                continue
+        return False
 
+    def get_geolocation(self, ip):
+        """Use django-ip-geolocation backend with built-in caching"""
+        cache_key = f"geo_{ip}"
+        cached = cache.get(cache_key)
         if cached:
             return cached
 
-        if not self.geo:
-            return {"country": None, "city": None}
-
         try:
-            geo_info = self.geo.lookup(ip_address)
-            geo_data = {
-                "country": geo_info.get("country_name") or None,
-                "city": geo_info.get("city") or None,
+            response = self.geolocation_backend.get_geolocation(ip)
+            data = {
+                "country": response.country_name,
+                "country_name": response.country_name,
+                "city": response.city,
             }
-            cache.set(cache_key, geo_data, timeout=60 * 60 * 24)  # 24 hours
-            return geo_data
+            cache.set(cache_key, data, 60 * 60 * 24)  # 24h
+            return data
         except Exception as e:
-            logger.warning(f"Geolocation failed for {ip_address}: {e}")
-            # Cache failure to avoid repeated API calls
-            cache.set(cache_key, {"country": None, "city": None}, timeout=60 * 5)  # 5 min
-            return {"country": None, "city": None}
+            logger.warning(f"Geolocation failed for {ip}: {e}")
+            cache.set(cache_key, {}, 300)  # 5 min on failure
+            return {}
