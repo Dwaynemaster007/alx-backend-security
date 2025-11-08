@@ -1,6 +1,6 @@
 from django.db import models
-from django.core.validators import MinLengthValidator
 from django.utils import timezone
+from django.conf import settings  # Required for DEBUG check in anonymized_ip()
 
 
 class RequestLog(models.Model):
@@ -12,7 +12,7 @@ class RequestLog(models.Model):
         protocol="both",
         unpack_ipv4=True,
         db_index=True,
-        help_text="Client IP address (anonymized in production)",
+        help_text="Client IP address (stored raw for accurate blocking)",
     )
     timestamp = models.DateTimeField(
         default=timezone.now,
@@ -49,22 +49,20 @@ class RequestLog(models.Model):
     def __str__(self):
         return f"{self.ip_address} → {self.path} [{self.timestamp.strftime('%Y-%m-%d %H:%M')}]"
 
-    def save(self, *args, **kwargs):
-        """
-        Optional: Anonymize IP in production (GDPR)
-        e.g., 192.168.1.100 → 192.168.1.0
-        """
-        if not settings.DEBUG:
+    def anonymized_ip(self):
+        """Return GDPR/CCPA-compliant IP for reports and admin display"""
+        if settings.DEBUG:
+            return self.ip_address
+        try:
             import ipaddress
-            try:
-                ip = ipaddress.ip_address(self.ip_address)
-                if ip.version == 4:
-                    self.ip_address = str(ipaddress.IPv4Network(f"{self.ip_address}/24", strict=False)[0])
-                elif ip.version == 6:
-                    self.ip_address = str(ipaddress.IPv6Network(f"{self.ip_address}/64", strict=False)[0])
-            except Exception:
-                pass  # Keep original if invalid
-        super().save(*args, **kwargs)
+            ip = ipaddress.ip_address(self.ip_address)
+            if ip.version == 4:
+                parts = self.ip_address.split('.')
+                return '.'.join(parts[:3]) + '.0'
+            else:  # IPv6
+                return ':'.join(self.ip_address.split(':')[:4]) + '::'
+        except Exception:
+            return "unknown"
 
 
 class BlockedIP(models.Model):
