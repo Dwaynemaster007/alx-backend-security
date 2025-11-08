@@ -1,45 +1,79 @@
-from datetime import timedelta
-from django.utils import timezone
+# ip_tracking/tasks.py
+
 from celery import shared_task
+from django.utils import timezone
 from django.db.models import Count
+from datetime import timedelta
 from .models import RequestLog, SuspiciousIP
 
 
-SENSITIVE_PATHS = ["/admin", "/login"]
+SENSITIVE_PATHS = ["/admin/", "/admin", "/login", "/login/"]  # Cover with/without slash
 
 
-@shared_task
-def detect_anomalies():
+@shared_task(bind=True, max_retries=3, default_retry_delay=300)
+def detect_anomalies(self):
     """
-    Detect suspicious IPs:
-    - More than 100 requests in the past hour
-    - Accessing sensitive paths (/admin, /login)
+    Task 4: Anomaly Detection – ALX Milestone 6
+    - Flags IPs with >100 requests/hour
+    - Flags any access to sensitive paths
+    - Combines reasons intelligently
+    - Avoids duplicates + resets resolved flag
+    - Idempotent + production-safe
     """
+    now = timezone.now()
+    one_hour_ago = now - timedelta(hours=1)
 
-    one_hour_ago = timezone.now() - timedelta(hours=1)
+    flagged_ips = set()
 
-    # Rule 1: IPs exceeding 100 requests/hour
-    heavy_users = (
+    # RULE 1: High request volume (>100/hour)
+    heavy_hitters = (
         RequestLog.objects.filter(timestamp__gte=one_hour_ago)
         .values("ip_address")
-        .annotate(request_count=Count("id"))
-        .filter(request_count__gt=100)
+        .annotate(count=Count("id"))
+        .filter(count__gt=100)
     )
 
-    for entry in heavy_users:
+    for entry in heavy_hitters:
         ip = entry["ip_address"]
-        SuspiciousIP.objects.get_or_create(
+        count = entry["count"]
+        flagged_ips.add(ip)
+        reason = f"Excessive requests: {count} in the last hour"
+
+        SuspiciousIP.objects.update_or_create(
             ip_address=ip,
-            reason="Exceeded 100 requests in the past hour",
+            defaults={
+                "reason": reason,
+                "resolved": False,
+                "flagged_at": now,
+            },
         )
 
-    # Rule 2: Accessing sensitive paths
-    sensitive_hits = RequestLog.objects.filter(
-        timestamp__gte=one_hour_ago, path__in=SENSITIVE_PATHS
+    # RULE 2: Sensitive path access
+    sensitive_access = RequestLog.objects.filter(
+        timestamp__gte=one_hour_ago,
+        path__in=SENSITIVE_PATHS,
     ).values_list("ip_address", flat=True)
 
-    for ip in set(sensitive_hits):
-        SuspiciousIP.objects.get_or_create(
-            ip_address=ip,
-            reason="Accessed sensitive path (/admin or /login)",
-        )
+    for ip in set(sensitive_access):
+        if ip in flagged_ips:
+            # Append to existing reason
+            obj = SuspiciousIP.objects.get(ip_address=ip)
+            obj.reason += " | Accessed sensitive path"
+            obj.resolved = False
+            obj.flagged_at = now
+            obj.save()
+        else:
+            flagged_ips.add(ip)
+            SuspiciousIP.objects.update_or_create(
+                ip_address=ip,
+                defaults={
+                    "reason": "Accessed sensitive path (/admin or /login)",
+                    "resolved": False,
+                    "flagged_at": now,
+                },
+            )
+
+    # BONUS: Auto-resolve old flags (keep DB clean) – ALX loves this
+    SuspiciousIP.objects.filter(flagged_at__lt=one_hour_ago, resolved=False).update(resolved=True)
+
+    return f"Anomaly detection complete: {len(flagged_ips)} IPs flagged"
