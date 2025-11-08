@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 set -o errexit
 
-# SYSTEM PIP — BYPASS ALL VENVS
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt --no-cache-dir --force-reinstall --no-deps
+# UPGRADE PIP SYSTEM-WIDE
+python -m pip install --upgrade pip setuptools wheel
 
-# COLLECTSTATIC + MIGRATE
+# SYSTEM-WIDE INSTALL — BYPASS ALL VENVS
+python -m pip install -r requirements.txt --no-cache-dir --force-reinstall
+
+# FORCE INSTALL MISSING DJANGO DEPS (asgiref, sqlparse, etc.)
+python -m pip install asgiref sqlparse tzdata --force-reinstall
+
+# DJANGO COMMANDS
 python manage.py collectstatic --no-input --clear
 python manage.py migrate --no-input
