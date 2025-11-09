@@ -11,5 +11,6 @@ whitenoise==6.7.0
 python-decouple==3.8
 psycopg2-binary==2.9.11
 django-celery-beat==2.6.0
-django-celery-results==2.5.1ratelimit==4.1.0
+django-celery-results==2.5.1
+ratelimit==4.1.0
 decorator==5.1.1

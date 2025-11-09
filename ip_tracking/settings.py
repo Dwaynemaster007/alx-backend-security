@@ -1,3 +1,6 @@
+import os
+from decouple import config
+
 from django.core.cache.backends.redis import RedisCache
 from celery.schedules import crontab
 from ipware import get_client_ip  # CRITICAL for proxy-aware IP
@@ -67,4 +70,24 @@ IP_GEOLOCATION_SETTINGS = {
     "BACKEND": "django_ip_geolocation.backends.IPGeolocationAPI",
     "API_KEY": "test",  # ALX accepts this in tests
     "CACHE_NAME": "default",
+}
+
+# === Email Notification ===
+DEBUG = False
+ALLOWED_HOSTS = ['*']  # Or your domain
+
+# Email (use your Gmail or SendGrid)
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = config('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+
+# Celery + RabbitMQ
+CELERY_BROKER_URL = config('RABBITMQ_URL', default='amqp://guest:guest@localhost:5672//')
+
+# drf-yasg
+SWAGGER_SETTINGS = {
+    'USE_SESSION_AUTH': False,
 }
