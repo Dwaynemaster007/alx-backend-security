@@ -1,21 +1,19 @@
-#!/usr/bin/env bash
-set -o errexit
+#!/bin/bash
+set -e
 
-# SYSTEM-WIDE UPGRADE
-python -m pip install --upgrade pip setuptools wheel --no-cache-dir
+echo "Upgrading pip + setuptools + wheel"
+python -m pip install --upgrade pip setuptools wheel
 
-# FORCE SYSTEM INSTALL — BYPASS .venv COMPLETELY
-python -m pip install -r requirements.txt --no-cache-dir --force-reinstall --no-deps
+echo "Installing requirements with NO CACHE + FORCE"
+pip install --no-cache-dir -r requirements.txt
 
-# EXPLICITLY INSTALL ALL HIDDEN DJANGO DEPS THAT BREAK IMPORTS
-python -m pip install \
-  asgiref>=3.7.0 \
-  sqlparse>=0.5.0 \
-  tzdata>=2024.1 \
-  ratelimit>=4.1.0 \
-  decorator>=5.1.1 \
-  --force-reinstall --no-cache-dir
+echo "FORCE REINSTALL decorator (fixes hidden dependency)"
+pip install --force-reinstall --no-cache-dir decorator==5.1.1
 
-# DJANGO COMMANDS
-python manage.py collectstatic --no-input --clear
-python manage.py migrate --no-input
+echo "Collect static"
+python manage.py collectstatic --no-input
+
+echo "Migrate"
+python manage.py migrate
+
+echo "ALX BACKEND SECURITY READY — IP TRACKING + GEO + RATELIMIT + CELERY"
