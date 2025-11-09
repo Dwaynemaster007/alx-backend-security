@@ -8,9 +8,9 @@ from ipware import get_client_ip  # CRITICAL for proxy-aware IP
 # === INSTALLED_APPS ===
 INSTALLED_APPS = [
     # ... your other apps
-    "ratelimit",
     "ip_tracking",
-    "django_celery_beat",  # Needed for periodic tasks in DB (bonus)
+    "django_celery_beat",
+    # "ratelimit" ← REMOVED FOREVER
 ]
 
 # === MIDDLEWARE ===
