@@ -1,19 +1,22 @@
-#!/bin/bash
+#!/usr/bin/bash
+# render-build.sh — ALX Backend Security NOV 2025 FIXED
+
 set -e
 
 echo "Upgrading pip + setuptools + wheel"
-python -m pip install --upgrade pip setuptools wheel
+pip install --upgrade pip setuptools wheel
 
 echo "Installing requirements with NO CACHE + FORCE"
-pip install --no-cache-dir -r requirements.txt
+pip install -r requirements.txt --no-cache-dir --force-reinstall
 
 echo "FORCE REINSTALL decorator (fixes hidden dependency)"
-pip install --force-reinstall --no-cache-dir decorator==5.1.1
+pip install decorator==5.1.1 --force-reinstall
 
 echo "Collect static"
-python manage.py collectstatic --no-input
+cd ip_tracking  # ← CRITICAL: CHANGE TO PROJECT DIR
+python manage.py collectstatic --no-input --clear
 
-echo "Migrate"
-python manage.py migrate
+echo "Running migrations"
+python manage.py migrate --no-input
 
-echo "ALX BACKEND SECURITY READY — IP TRACKING + GEO + RATELIMIT + CELERY"
+echo "Build successful! 🎉"
