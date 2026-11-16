@@ -3,7 +3,6 @@ from django.http import HttpResponseForbidden
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from ipware import get_client_ip  # <-- CRITICAL: use django-ipware
-from django_ip_geolocation.middleware import GeolocationMiddleware
 from django_ip_geolocation.backends import IPGeolocationAPI
 from .models import RequestLog, BlockedIP
 import logging
@@ -21,7 +20,6 @@ class RequestLoggingMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         # Reuse django-ip-geolocation backend (already configured in settings)
-        self.geolocation_backend = IPGeolocationAPI()
 
     def __call__(self, request):
         # 1. Get reliable IP (handles Cloudflare, Nginx, etc.)
@@ -78,15 +76,18 @@ class RequestLoggingMiddleware:
         """Use django-ip-geolocation backend with built-in caching"""
         cache_key = f"geo_{ip}"
         cached = cache.get(cache_key)
-        if cached:
+        if cached is not None:
             return cached
 
         try:
-            response = self.geolocation_backend.get_geolocation(ip)
+            backend = IPGeolocationAPI(ip)
+            backend.geolocate()
+            parsed = backend.data()
+            country = parsed.get("county") or {}  # the library spells this key "county"
             data = {
-                "country": response.country_name,
-                "country_name": response.country_name,
-                "city": response.city,
+                "country": country.get("name"),
+                "country_name": country.get("name"),
+                "city": (parsed.get("raw_data") or {}).get("city"),
             }
             cache.set(cache_key, data, 60 * 60 * 24)  # 24h
             return data

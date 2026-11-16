@@ -29,16 +29,20 @@ A **production-grade IP tracking system** built with Django that logs, blacklist
 
 ```
 alx-backend-security/
-├── ip_tracking/
-│   ├── middleware.py          # Logs + blocks + geolocates
+├── security/                  # Django project
+│   ├── settings.py            # Env-driven settings: cache, rate limits, Celery, email
+│   ├── urls.py                # admin, Swagger, app routes
+│   ├── celery.py              # Celery app
+│   └── wsgi.py
+├── ip_tracking/               # Django app
+│   ├── middleware.py          # Logs, blocks and geolocates every request
 │   ├── models.py              # RequestLog, BlockedIP, SuspiciousIP
-│   ├── views.py               # Rate-limited login view
-│   ├── tasks.py               # Celery anomaly detection
-│   └── management/
-│       └── commands/
-│           └── block_ip.py    # CLI to block IPs
-├── settings.py               # Middleware, ratelimit, Redis config
-├── celery_config.py           # Celery + Redis broker
+│   ├── views.py               # Rate-limited login and sensitive endpoints
+│   ├── tasks.py               # Celery anomaly detection (hourly)
+│   └── management/commands/
+│       └── block_ip.py        # CLI to block IPs and CIDR ranges
+├── manage.py
+├── render-build.sh            # Render deployment build
 └── requirements.txt
 ```
 
@@ -78,7 +82,8 @@ python manage.py migrate
 redis-server
 
 # 6. Run Celery worker
-celery -A alx_backend_security worker -l info
+celery -A security worker -l info
+celery -A security beat -l info
 
 # 7. Start Django
 python manage.py runserver
@@ -88,11 +93,19 @@ python manage.py runserver
 
 ## Environment Variables (`.env`)
 
+All variables are optional for local development:
+
 ```env
-IPGEOLOCATION_API_KEY=your_ipinfo_token
-REDIS_URL=redis://localhost:6379/0
-DJANGO_SECRET_KEY=your-secret-key
+SECRET_KEY=your-secret-key
 DEBUG=True
+ALLOWED_HOSTS=127.0.0.1,localhost
+REDIS_URL=redis://localhost:6379/1          # cache for rate limits (locmem if unset)
+CELERY_BROKER_URL=redis://localhost:6379/0
+IP_GEOLOCATION_API_KEY=your-key
+DATABASE_NAME=                              # set the DATABASE_* values to use PostgreSQL
+EMAIL_HOST=smtp.gmail.com                   # emails print to the console if unset
+EMAIL_HOST_USER=
+EMAIL_HOST_PASSWORD=
 ```
 
 ---
@@ -118,8 +131,16 @@ celery -A alx_backend_security call ip_tracking.tasks.detect_anomalies
 
 ## API Endpoints (Protected)
 
-| Endpoint | Rate Limit |
-|--------|------------|
+| Endpoint | Access | Rate limit |
+|--------|--------|------------|
+| `POST /login/` | Public (`username`, `password`) | 10 per 15 min per user/IP |
+| `GET /sensitive/` | Public | 5 per minute per user/IP |
+| `GET /admin-dashboard/` | Staff only | 100 per hour |
+| `GET /test-email/` | Staff only | n/a |
+| `GET /swagger/` | Public | API docs |
+| `/admin/` | Django admin | Blocked IPs get a 403 |
+
+--------|------------|
 | `POST /api/login/` | 5/min (anon), 10/min (auth) |
 | `GET /admin/` | Blocked if IP in blacklist |
 

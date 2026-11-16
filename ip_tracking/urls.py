@@ -1,21 +1,10 @@
-from django.contrib import admin
-from django.urls import path, include
-from drf_yasg.views import get_schema_view
-from drf_yasg import openapi
-from rest_framework import permissions
+from django.urls import path
 
-schema_view = get_schema_view(
-    openapi.Info(
-        title="ALX IP Tracking API",
-        default_version='v1',
-        description="Milestone 6 - Security & Analytics",
-    ),
-    public=True,
-    permission_classes=(permissions.AllowAny,),
-)
+from . import views
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='swagger'),
-    path('', include('ip_tracking.urls')),  # if you have one
+    path('login/', views.login_view, name='login'),
+    path('sensitive/', views.sensitive_view, name='sensitive'),
+    path('test-email/', views.test_email, name='test-email'),
+    path('admin-dashboard/', views.admin_dashboard_proxy, name='admin-dashboard'),
 ]

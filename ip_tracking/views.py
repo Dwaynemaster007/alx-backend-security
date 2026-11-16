@@ -6,6 +6,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django_ratelimit.decorators import ratelimit  # v4+ correct import
 from ipware import get_client_ip
 from django.core.mail import send_mail
+from django.views.decorators.csrf import csrf_exempt
 
 # === HELPER: Proxy-aware key for authenticated vs anonymous ===
 def get_ratelimit_key(group, request):
@@ -21,6 +22,7 @@ def get_ratelimit_key(group, request):
 
 
 # === TASK 3: SENSITIVE LOGIN VIEW (v4 MIGRATED) ===
+@csrf_exempt  # JSON API endpoint called by non-browser clients
 @ratelimit(group='login-view', key=get_ratelimit_key, rate='10/15m', block=True)
 def login_view(request):
     """
@@ -60,12 +62,13 @@ def sensitive_view(request):
 
 
 # === TEST EMAIL (FOR CELERY + EMAIL VERIFICATION) ===
+@staff_member_required
 def test_email(request):
     send_mail(
         'ALX Milestone 6 - Deployment Test',
-        'If you see this, email + Celery works!',
-        'from@example.com',
-        ['your-email@gmail.com'],
+        'If you see this, email works!',
+        None,  # DEFAULT_FROM_EMAIL
+        [request.user.email or 'admin@example.com'],
         fail_silently=False,
     )
     return JsonResponse({"status": "Email sent via Celery!"})
