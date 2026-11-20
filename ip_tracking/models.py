@@ -1,6 +1,16 @@
 from django.db import models
 from django.utils import timezone
 from django.conf import settings  # Required for DEBUG check in anonymized_ip()
+from django.core.exceptions import ValidationError
+import ipaddress
+
+
+def validate_ip_or_network(value):
+    """Accept a single IP address or a CIDR range (IPv4 or IPv6)."""
+    try:
+        ipaddress.ip_network(value, strict=False)
+    except ValueError:
+        raise ValidationError(f"{value} is not a valid IP address or CIDR range.")
 
 
 class RequestLog(models.Model):
@@ -69,10 +79,11 @@ class BlockedIP(models.Model):
     """
     Blacklisted IP addresses — instant 403 response.
     """
-    ip_address = models.GenericIPAddressField(
+    # A CharField, because GenericIPAddressField can't hold CIDR ranges like 10.0.0.0/8
+    ip_address = models.CharField(
+        max_length=50,
         unique=True,
-        protocol="both",
-        db_index=True,
+        validators=[validate_ip_or_network],
         help_text="Blocked IP address or CIDR range",
     )
     blocked_at = models.DateTimeField(

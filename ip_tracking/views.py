@@ -71,7 +71,7 @@ def test_email(request):
         [request.user.email or 'admin@example.com'],
         fail_silently=False,
     )
-    return JsonResponse({"status": "Email sent via Celery!"})
+    return JsonResponse({"status": "Test email sent."})
 
 
 # === BONUS: PROTECT ADMIN DASHBOARD (ALX QA LOVES THIS) ===

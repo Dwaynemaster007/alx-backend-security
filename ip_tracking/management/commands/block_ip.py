@@ -24,7 +24,8 @@ class Command(BaseCommand):
         # Validate IP or CIDR
         try:
             network = ipaddress.ip_network(ip_input, strict=False)
-            ip_str = str(network)  # Normalizes to CIDR form
+            # Store single addresses as plain IPs and ranges in CIDR form
+            ip_str = str(network.network_address) if network.num_addresses == 1 else str(network)
         except ValueError:
             self.stderr.write(self.style.ERROR(f"Invalid IP or CIDR: {ip_input}"))
             return
