@@ -182,7 +182,7 @@ ALX ProDev Backend — Milestone 6
 
 <div align="center">
 
-### Built with security, scale, and ethics in mind
+### Built with security, scale, and ethics in mind.
 
 [![GitHub](https://img.shields.io/badge/GitHub-Dwaynemaster007-181717?style=for-the-badge&logo=github)](https://github.com/Dwaynemaster007)
 
